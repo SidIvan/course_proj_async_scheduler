@@ -1,4 +1,3 @@
-use std::fmt::Error;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, mpsc, Mutex};
@@ -7,7 +6,6 @@ use std::task::{Context, Poll};
 use std::thread;
 use std::thread::sleep;
 use std::time::Duration;
-use futures::executor::block_on;
 use futures::task::noop_waker;
 
 // use std::future::Future;
@@ -202,8 +200,7 @@ use futures::task::noop_waker;
 //
 
 trait SchedulerQueue {
-    fn push<F>(&self, future: F)
-    where F: Future<Output=()> + Send + 'static;
+    fn push(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>);
 
     fn pop(&self) -> Result<Pin<Box<dyn Future<Output = ()> + Send>>, RecvError>;
 }
@@ -214,10 +211,9 @@ struct ChannelAsyncQueue {
 }
 
 impl SchedulerQueue for ChannelAsyncQueue {
-    fn push<F>(&self, future: F)
-    where F : Future<Output=()> + Send + 'static
+    fn push(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>)
     {
-        self.tail.send(Box::pin(future)).unwrap()
+        self.tail.send(future).unwrap()
     }
 
     fn pop(&self) -> Result<Pin<Box<dyn Future<Output = ()> + Send>>, RecvError>{
@@ -225,19 +221,22 @@ impl SchedulerQueue for ChannelAsyncQueue {
     }
 }
 
-struct SingleThreadExecutor {
-    // queue: Sender<Pin<Box<dyn Future<Output = ()> + Send>>>,
-    queue: Arc<ChannelAsyncQueue>,
+struct SingleThreadExecutor<> {
+    queue: Arc<Mutex<dyn SchedulerQueue + Send>>,
+}
+
+fn create_queue() -> Arc<Mutex<dyn SchedulerQueue + Send>> {
+    let (sender, receiver): (Sender<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>, Receiver<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>) = mpsc::channel();
+    let queue = Arc::new(Mutex::new(ChannelAsyncQueue{ head: Arc::new(Mutex::new(receiver)), tail: sender }));
+    return queue;
 }
 
 impl SingleThreadExecutor {
     fn new() -> SingleThreadExecutor {
-        let (sender, receiver): (Sender<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>, Receiver<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>) = mpsc::channel();
-        let queue = Arc::new(ChannelAsyncQueue{ head: Arc::new(Mutex::new(receiver)), tail: sender });
+        let queue = create_queue();
         let q = Arc::clone(&queue);
-        // Запускаем поток, который опрашивает задачи из очереди
         thread::spawn(move || {
-            while let Ok(task) = q.pop() {
+            while let Ok(task) = q.lock().unwrap().pop() {
                 let mut pinned = task;
                 let y = noop_waker();
                 let mut cx = Context::from_waker(&y);
@@ -249,9 +248,9 @@ impl SingleThreadExecutor {
                     }
                 }
             }
-        });
+        });2ю
 
-        SingleThreadExecutor { queue: queue }
+        SingleThreadExecutor { queue }
 
     }
 
@@ -259,7 +258,7 @@ impl SingleThreadExecutor {
         where
             F: Future<Output = ()> + Send + 'static,
     {
-        self.queue.push(future);
+        self.queue.lock().unwrap().push(Box::pin(future));
     }
 }
 
@@ -268,7 +267,7 @@ async fn some_async_foo() {
 }
 
 fn main() {
-    let executor = SingleThreadExecutor::new();
+    let executor: SingleThreadExecutor = SingleThreadExecutor::new();
 
     // Запускаем несколько асинхронных задач с помощью исполнителя
     executor.spawn(async {
