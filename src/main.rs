@@ -1,7 +1,7 @@
 use std::fmt::Error;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc, Mutex};
 use std::sync::mpsc::{Receiver, RecvError, Sender};
 use std::task::{Context, Poll};
 use std::thread;
@@ -209,7 +209,7 @@ trait SchedulerQueue {
 }
 
 struct ChannelAsyncQueue {
-    head: Receiver<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    head: Arc<Mutex<Receiver<Pin<Box<dyn Future<Output = ()> + Send>>>>>,
     tail: Sender<Pin<Box<dyn Future<Output = ()> + Send>>>,
 }
 
@@ -221,35 +221,37 @@ impl SchedulerQueue for ChannelAsyncQueue {
     }
 
     fn pop(&self) -> Result<Pin<Box<dyn Future<Output = ()> + Send>>, RecvError>{
-        return self.head.recv();
+        return self.head.lock().unwrap().recv();
     }
 }
 
 struct SingleThreadExecutor {
-    queue: Sender<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    // queue: Sender<Pin<Box<dyn Future<Output = ()> + Send>>>,
+    queue: Arc<ChannelAsyncQueue>,
 }
 
 impl SingleThreadExecutor {
     fn new() -> SingleThreadExecutor {
         let (sender, receiver): (Sender<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>, Receiver<Pin<Box<dyn Future<Output = ()> + Send + 'static>>>) = mpsc::channel();
-
+        let queue = Arc::new(ChannelAsyncQueue{ head: Arc::new(Mutex::new(receiver)), tail: sender });
+        let q = Arc::clone(&queue);
         // Запускаем поток, который опрашивает задачи из очереди
         thread::spawn(move || {
-            while let Ok(task) = receiver.recv() {
+            while let Ok(task) = q.pop() {
                 let mut pinned = task;
                 let y = noop_waker();
                 let mut cx = Context::from_waker(&y);
 
                 loop {
                     match pinned.as_mut().poll(&mut cx) {
-                        Poll::Ready((z)) => {println!("{:?}",z);break},
+                        Poll::Ready(z) => {println!("{:?}",z);break},
                         Poll::Pending => {}
                     }
                 }
             }
         });
 
-        SingleThreadExecutor { queue: sender }
+        SingleThreadExecutor { queue: queue }
 
     }
 
@@ -257,7 +259,7 @@ impl SingleThreadExecutor {
         where
             F: Future<Output = ()> + Send + 'static,
     {
-        self.queue.send(Box::pin(future)).unwrap();
+        self.queue.push(future);
     }
 }
 
