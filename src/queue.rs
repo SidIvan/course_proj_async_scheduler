@@ -20,6 +20,7 @@ pub(crate) trait SchedulerQueue {
 pub(crate) enum PushStrategy {
     RANDOM,
     SHORTEST,
+    TYPE_SPLIT,
 }
 
 pub(crate) enum TypeOfQueue {

@@ -7,9 +7,11 @@ mod socket_read_future;
 mod tcp_stream_poller;
 mod socket_write_future;
 
-use std::future::Future;
+// use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, sync_channel, SyncSender};
+use std::task::{Context, Poll};
 use std::thread;
 use futures::executor::block_on;
 use mio::net::{TcpStream, TcpListener};
@@ -153,7 +155,7 @@ fn fibonacci_test() {
     // let executor = SingleThreadExecutor::new(TypeOfQueue::SimpleGlobal);
     // let executor: MultiThreadExecutor = MultiThreadExecutor::new(4, TypeOfQueue::SimpleGlobal);
     // let executor: MultiThreadExecutor = MultiThreadExecutor::new(4, TypeOfQueue::ThreadUnique(4, PushStrategy::RANDOM));
-    let executor: MultiThreadExecutor = MultiThreadExecutor::new(4, TypeOfQueue::ThreadUnique(4, PushStrategy::SHORTEST));
+    let executor: MultiThreadExecutor = MultiThreadExecutor::new(4, TypeOfQueue::ThreadUnique(4, PushStrategy::TYPE_SPLIT));
     for i in 1..20 {
         executor.spawn(fibonacci_future(42));
     }
@@ -162,4 +164,10 @@ fn fibonacci_test() {
 
 fn main() {
     block_on(async_main());
+}
+
+pub trait Future {
+    type Output;
+
+    fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>;
 }

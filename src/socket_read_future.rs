@@ -13,7 +13,6 @@ pub(crate) struct SocketReadFuture {
 
 impl SocketReadFuture {
     pub(crate) fn new(socket: Arc<Mutex<TcpStream>>, poller: Arc<Mutex<SyncSender<Arc<Mutex<TcpStream>>>>>) -> SocketReadFuture {
-        println!("AXAXA");
         return  SocketReadFuture{ socket: socket, poller: poller}
     }
 }

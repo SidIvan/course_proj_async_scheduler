@@ -1,3 +1,4 @@
+use std::any::{Any, TypeId};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -8,6 +9,8 @@ use std::thread::ThreadId;
 use rand::Rng;
 use crate::single_queue::SingleGlobalQueue;
 use crate::queue::{PushStrategy, SchedulerQueue};
+use crate::socket_read_future::SocketReadFuture;
+use crate::socket_write_future::SocketWriteFuture;
 
 pub(crate) struct ThreadLocalQueue {
     push_strategy: PushStrategy,
@@ -40,7 +43,6 @@ impl SchedulerQueue for ThreadLocalQueue {
                 let queue_ind = rand::thread_rng().gen_range(0..queues.len());
                 let mut queue = queues.get_mut(queue_ind).unwrap();
                 queue.push(future);
-
             }
             PushStrategy::SHORTEST => {
                 let mut queues = self.queues.lock().unwrap();
@@ -54,6 +56,20 @@ impl SchedulerQueue for ThreadLocalQueue {
                     }
                 }
                 queues.get_mut(j).unwrap().push(future);
+            }
+            PushStrategy::TYPE_SPLIT => {
+                if future.type_id() == TypeId::of::<SocketReadFuture>() {
+                    let mut queues = self.queues.lock().unwrap();
+                    queues.get_mut(0).unwrap().push(future);
+                } else if future.type_id() == TypeId::of::<SocketWriteFuture>() {
+                    let mut queues = self.queues.lock().unwrap();
+                    queues.get_mut(1).unwrap().push(future);
+                } else {
+                    let mut queues = self.queues.lock().unwrap();
+                    let queue_ind = rand::thread_rng().gen_range(2..queues.len());
+                    let mut queue = queues.get_mut(queue_ind).unwrap();
+                    queue.push(future);
+                }
             }
         }
     }
@@ -79,6 +95,20 @@ impl SchedulerQueue for ThreadLocalQueue {
                     }
                 }
                 queues.get_mut(j).unwrap().repush(future);
+            }
+            PushStrategy::TYPE_SPLIT => {
+                if future.type_id() == TypeId::of::<SocketReadFuture>() {
+                    let mut queues = self.queues.lock().unwrap();
+                    queues.get_mut(0).unwrap().repush(future);
+                } else if future.type_id() == TypeId::of::<SocketWriteFuture>() {
+                    let mut queues = self.queues.lock().unwrap();
+                    queues.get_mut(1).unwrap().repush(future);
+                } else {
+                    let mut queues = self.queues.lock().unwrap();
+                    let queue_ind = rand::thread_rng().gen_range(2..queues.len());
+                    let mut queue = queues.get_mut(queue_ind).unwrap();
+                    queue.repush(future);
+                }
             }
         }
     }
