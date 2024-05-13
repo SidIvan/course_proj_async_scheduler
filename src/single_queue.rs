@@ -50,6 +50,7 @@ impl SchedulerQueue for SingleGlobalQueue {
     }
 
     fn can_stop(& mut self) -> bool {
-        return self.num_tasks.load(Ordering::SeqCst) == 0;
+        // println!("{:?}", self.num_tasks);
+        return self.num_tasks.load(Ordering::SeqCst) <= 0;
     }
 }
