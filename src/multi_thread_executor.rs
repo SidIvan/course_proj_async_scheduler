@@ -5,7 +5,6 @@ use std::sync::mpsc::TryRecvError;
 use std::task::{Context, Poll};
 use std::thread;
 use std::thread::JoinHandle;
-use futures::future::err;
 use futures::task::noop_waker;
 use crate::queue::SchedulerQueue;
 use crate::{queue, TypeOfQueue};
@@ -45,7 +44,6 @@ impl MultiThreadExecutor {
                         Err(err_val) => {
                             match err_val {
                                 TryRecvError::Empty => {
-                                    // println!("{:?}", q.lock().unwrap().can_stop());
                                     if q.lock().unwrap().can_stop() && shutdown_cpy.load(Ordering::SeqCst) {
                                         return;
                                     }
@@ -70,7 +68,6 @@ impl MultiThreadExecutor {
     }
 
     pub(crate) fn wait(mut self) {
-        println!("AXAXAXAX");
         self.shutdown.store(true, Ordering::SeqCst);
         while self.join_handles.len() != 0 {
             let join_handle = self.join_handles.pop().unwrap();

@@ -6,21 +6,18 @@ mod multi_thread_executor;
 mod socket_read_future;
 mod tcp_stream_poller;
 mod socket_write_future;
+mod stealing_queue;
 
 use std::ops::Sub;
-// use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Receiver, sync_channel, SyncSender};
 use std::task::{Context, Poll};
 use std::thread;
-use std::thread::sleep;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use futures::executor::block_on;
-use futures::future::join_all;
 use mio::net::{TcpStream, TcpListener};
 use rand::Rng;
-use tokio::join;
 use crate::multi_thread_executor::MultiThreadExecutor;
 use crate::queue::{PushStrategy, SchedulerQueue, TypeOfQueue};
 use crate::single_thread_executor::SingleThreadExecutor;
@@ -122,7 +119,6 @@ fn write_socket_test() {
             Err(_) => {}
         }
     }
-    println!("DONE");
     let snd_clone = Arc::clone(&w_arc_snd);
     loop {
         match TcpStream::connect("127.0.0.1:8081".parse().unwrap()) {
@@ -139,7 +135,7 @@ fn write_socket_test() {
 }
 
 async fn async_main() {
-    // fibonacci_test();
+    // fibonacci_test_1();
     fibonacci_test_2();
     // read_socket_test();
 }
@@ -162,12 +158,12 @@ async fn fibonacci_future_tokio(n: i32, i: i32) {
     println!("{}-th fibonacci number is {} {}", n, fibonacci(n), i)
 }
 
-fn fibonacci_test() {
+fn fibonacci_test_1() {
     // let executor = SingleThreadExecutor::new(TypeOfQueue::SimpleGlobal);
     let executor: MultiThreadExecutor = MultiThreadExecutor::new(8, TypeOfQueue::SimpleGlobal);
     // let executor: MultiThreadExecutor = MultiThreadExecutor::new(8, TypeOfQueue::ThreadUnique(8, PushStrategy::RANDOM));
     // let executor: MultiThreadExecutor = MultiThreadExecutor::new(4, TypeOfQueue::ThreadUnique(4, PushStrategy::TYPE_SPLIT));
-    for i in 0..2000 {
+    for i in 0..1000 {
         executor.spawn(fibonacci_future(35));
     }
     executor.wait();
@@ -201,7 +197,7 @@ fn fibonacci_test_2() {
             Err(_) => {}
         }
     }
-    for i in 0..500 {
+    for i in 0..2000 {
         executor.spawn(fibonacci_future(35));
     }
     executor.wait();
@@ -220,17 +216,21 @@ pub trait Future {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output>;
 }
 
+async fn fibonacci_test_tokio_1() {
+    let mut x = Vec::new();
+    for i in 0..1000 {
+        let j_h = tokio::spawn(fibonacci_future_tokio(35, i));
+        x.push(j_h)
+    }
+    for i in 0..1000 {
+        x.get_mut(i).unwrap().await;
+    }
+}
+
 // #[tokio::main(worker_threads=8)]
 // async fn main() {
 //     let start = SystemTime::now();
-//     let mut x = Vec::new();
-//     for i in 0..1000 {
-//         let j_h = tokio::spawn(fibonacci_future_tokio(35, i));
-//         x.push(j_h)
-//     }
-//     for i in 0..1000 {
-//         x.get_mut(i).unwrap().await;
-//     }
+//     fibonacci_test_tokio_1().await;
 //     let end = SystemTime::now();
 //     println!("{:?}", end.duration_since(start))
 // }

@@ -39,7 +39,7 @@ impl Future for SocketReadFuture {
                }
            }
        };
-        println!("aaa{:?}", buf);
+        println!("read content {:?}", buf);
         x
     }
 }

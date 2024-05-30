@@ -129,12 +129,10 @@ impl SchedulerQueue for ThreadLocalQueue {
     }
 
     fn done(&mut self) {
-        println!("A");
         let thread_id = thread::current().id();
         let mut queues = self.queues.lock().unwrap();
         for i in 0..self.thread_nos.len() {
             if *self.thread_nos.get_mut(i).unwrap() == thread_id {
-                println!("B");
                 self.num_tasks.fetch_sub(1, Ordering::SeqCst);
                 queues.get_mut(i).unwrap().done();
                 return;
@@ -144,16 +142,6 @@ impl SchedulerQueue for ThreadLocalQueue {
     }
 
     fn can_stop(&mut self) -> bool {
-        // println!("{:?}", self.num_tasks);
         return self.num_tasks.load(Ordering::SeqCst) == 0;
-        let thread_id = thread::current().id();
-        let mut queues = self.queues.lock().unwrap();
-        for i in 0..self.thread_nos.len() {
-            if *self.thread_nos.get_mut(i).unwrap() == thread_id {
-                // println!("{:?}", queues.get_mut(i).unwrap().num_tasks);
-                return queues.get_mut(i).unwrap().can_stop();
-            }
-        }
-        panic!("Can not find queue for thread {:?}", thread_id);
     }
 }
